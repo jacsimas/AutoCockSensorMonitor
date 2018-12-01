@@ -3,49 +3,84 @@ package lt.soe.autocock.weightsensor;
 import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
 
+import java.nio.ByteBuffer;
 import java.util.Random;
 
 public class Hx711WeightSensor {
 
-    private static final int PLASTIC_COCKTAIL_GLASS_4OZ_IN_GRAMS = 33;
-    private static final int SMALL_COCKTAIL_GLASS_4OZ_IN_GRAMS = 100;
-    private static final int FULL_SIZE_COCKTAIL_GLASS_6OZ_IN_GRAMS = 217;
+    private static final double AVERAGE_GRAMS_PER_MILLILITRE = 0.893F;
+    private static final int FLOW_RATE_MILLILITRES_PER_SECOND = 20;
+    private static final double FLOW_RATE_GRAMS_PER_SECOND = AVERAGE_GRAMS_PER_MILLILITRE * (
+            (double) FLOW_RATE_MILLILITRES_PER_SECOND
+    );
 
-    private static final int[] COCKTAIL_GLASSES = {
-            PLASTIC_COCKTAIL_GLASS_4OZ_IN_GRAMS,
-            SMALL_COCKTAIL_GLASS_4OZ_IN_GRAMS,
-            FULL_SIZE_COCKTAIL_GLASS_6OZ_IN_GRAMS
+    private static final CocktailGlass PLASTIC_COCKTAIL_GLASS = new CocktailGlass(210, 17.3);
+    private static final CocktailGlass TUMBLER_COCKTAIL_GLASS = new CocktailGlass(325, 320);
+    private static final CocktailGlass MARTINI_COCKTAIL_GLASS = new CocktailGlass(175, 216.67);
+    private static final CocktailGlass PINA_COLADA_COCKTAIL_GLASS = new CocktailGlass(460, 303.33);
+    private static final CocktailGlass SAUCER_COCKTAIL_GLASS = new CocktailGlass(200, 211);
+
+    private static final CocktailGlass[] COCKTAIL_GLASSES = {
+            PLASTIC_COCKTAIL_GLASS,
+            TUMBLER_COCKTAIL_GLASS,
+            MARTINI_COCKTAIL_GLASS,
+            PINA_COLADA_COCKTAIL_GLASS,
+            SAUCER_COCKTAIL_GLASS
     };
+
+    private static ZMQ.Socket socket;
 
     public static void main(String[] args) {
         try (ZContext context = new ZContext()) {
-            ZMQ.Socket publisher = context.createSocket(ZMQ.PUB);
-            publisher.bind("tcp://*:5556");
+            socket = context.createSocket(ZMQ.PAIR);
+            socket.bind("tcp://*:5556");
 
-            //  Ensure subscriber connection has time to complete and
-            //  add more time for the glass to be put on the weight sensor.
+            double currentSensorWeight = 0.0D;
+            CocktailGlass cocktailGlass = getRandomCocktailGlass();
+
             try {
-                Thread.sleep(5000);
+                // Send initial weight 0.
+                send(currentSensorWeight);
+
+                // Wait between 1 and 5 seconds to place the glass on the sensor.
+                Thread.sleep(1000 + (1000 * new Random().nextInt(5)));
+
+                // Put the glass on the weight sensor.
+                currentSensorWeight += cocktailGlass.weightGrams;
+                send(currentSensorWeight);
             } catch (InterruptedException e) {
                 throw new IllegalStateException(e);
             }
 
-            //  Send one random update per second
-            Random rand = new Random(System.currentTimeMillis());
-            while (!Thread.currentThread().isInterrupted()) {
+            // Fill the glass to 95% capacity.
+            double volumeMillilitres = ((double) cocktailGlass.volumeMillilitres) * 0.95D;
+            // Get the weight in grams of the liquid when it fills the glass
+            double gramsOfLiquid = volumeMillilitres * AVERAGE_GRAMS_PER_MILLILITRE;
+            double finalWeight = currentSensorWeight + gramsOfLiquid;
+
+            while (currentSensorWeight < finalWeight) {
+                // Get flow rate per tenth of a second.
+                currentSensorWeight += (FLOW_RATE_GRAMS_PER_SECOND * 0.1);
+                send(currentSensorWeight);
                 try {
-                    Thread.sleep(1000);
+                    Thread.sleep(100);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    throw new IllegalStateException(e);
                 }
-                publisher.send();
             }
+
+            socket.close();
         }
     }
 
-    private static int getRandomCocktailGlass() {
+    private static CocktailGlass getRandomCocktailGlass() {
         int randomIndex = new Random().nextInt(COCKTAIL_GLASSES.length);
         return COCKTAIL_GLASSES[randomIndex];
+    }
+
+    private static void send(double updatedSensorWeight) {
+        byte[] bytes = ByteBuffer.allocate(8).putDouble(updatedSensorWeight).array();
+        socket.send(bytes);
     }
 
 }
