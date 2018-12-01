@@ -19,7 +19,7 @@
                         <manifest>
                             <addClasspath>true</addClasspath>
                             <classpathPrefix>lib/</classpathPrefix>
-                            <mainClass>lt.soe.autococksensormonitor.Main</mainClass>
+                            <mainClass>lt.soe.autocock.autococksensormonitor.Main</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

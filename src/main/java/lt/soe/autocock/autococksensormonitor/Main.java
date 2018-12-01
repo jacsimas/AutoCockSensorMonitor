@@ -1,4 +1,4 @@
-package lt.soe.autococksensormonitor;
+package lt.soe.autocock.autococksensormonitor;
 
 public class Main {
 
