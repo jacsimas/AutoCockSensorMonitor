@@ -69,6 +69,7 @@ public class Hx711WeightSensor {
                 }
             }
 
+            send(-1);
             socket.close();
         }
     }
